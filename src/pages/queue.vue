@@ -1,109 +1,73 @@
 <template>
-    <main class="p-4">
-        <div>Total: {{ q.total.size }}</div>
-        <div>Running: {{ q.running.size }}</div>
-        <div>Success: {{ q.success.size }}</div>
-        <div>Timeout: {{ q.timeout.size }}</div>
-        <q-btn
-            label="Add"
-            @click="add"
-        />
-        <q-btn
-            label="Start"
-            @click="start"
-        />
+    <main class="p-4 space-y-4">
+        <q-list
+            bordered separator
+            class="w-[300px]"
+        >
+            <q-item
+                v-for="item in [
+                { label: 'Total',   value: queue.total.size   },
+                { label: 'Waiting', value: queue.waiting.size },
+                { label: 'Running', value: queue.running.size },
+                { label: 'Success', value: queue.success.size },
+                { label: 'Failed',  value: queue.failed.size },
+                { label: 'Timeout', value: queue.timeout.size },
+            ]"
+                clickable
+            >
+                <q-item-section>{{ item.label }}</q-item-section>
+                <q-item-section side>{{ item.value }}</q-item-section>
+            </q-item>
+        </q-list>
+
+        <div class="space-x-2">
+            <q-btn
+                v-for="item in [
+                    { label: 'Add',   click: add   },
+                    { label: 'Start', click: start },
+                    { label: 'Clear', click: clear },
+                ]"
+                :label="item.label"
+                unelevated
+                color="primary"
+                no-caps
+                @click="item.click"
+            />
+        </div>
     </main>
 </template>
 
 <script setup lang="ts">
-import { ref }                 from 'vue'
-import _Queue, { QueueWorker } from 'queue'
-import { wait }                from 'src/core/wait'
+import { ref }   from 'vue'
+import { wait }  from 'src/core/wait'
+import { Queue } from 'src/core/queue'
 
-class Queue {
-    constructor (...options: ConstructorParameters<typeof _Queue>) {
-        this.q = new _Queue(...options)
-    }
-
-    readonly q
-
-    readonly total   = new Set<QueueWorker>()
-    readonly running = new Set<QueueWorker>()
-    readonly timeout = new Set<QueueWorker>()
-
-    readonly success = new Set<{
-        job: QueueWorker
-        res: any
-    }>()
-
-    public push (job: (...args: any) => Promise<any>) {
-        this.total.add(job)
-
-        return this.q.push((cb) => {
-            job()
-                .then(res => {
-                    if (cb) cb(undefined, res)
-                })
-                .catch(err => {
-                    if (cb) cb(err)
-                })
-        })
-    }
-
-    public async start () {
-        return await this.q.start()
-    }
-}
-
-const q = ref(new Queue({
+const queue = ref(new Queue({
     concurrency: 3,
-    timeout    : 300,
+    timeout    : 700,
     // autostart  : true,
 }))
 
-q.value.q.addEventListener('start', e => {
-    if (!e.detail.job) return
-
-    q.value.running.add(e.detail.job)
-})
-
-q.value.q.addEventListener('end', e => {
-    console.log('end', e)
-})
-
-q.value.q.addEventListener('error', e => {
-    console.log('error', e)
-})
-
-q.value.q.addEventListener('timeout', e => {
-    q.value.running.delete(e.detail.job)
-    q.value.timeout.add(e.detail.job)
-})
-
-q.value.q.addEventListener('success', e => {
-    // @ts-ignore
-    q.value.running.delete(e.detail.job)
-    q.value.success.add({
-        // @ts-ignore
-        job: e.detail.job,
-        res: e.detail.result,
-    })
-})
+queue.value.init()
 
 function add () {
-    q.value.push(async () => {
-        const time = Math.random() * 1000
+    queue.value.push(async () => {
+        const time = Math.random() * 10000
 
         await wait(time)
 
-        if (time > 500) throw new Error('???')
+        if (time < 300) throw new Error('Random failed')
 
         return Date.now()
     })
 }
 
 async function start () {
-    await q.value.start()
-    console.log('.....')
+    const res = await queue.value.start()
+    console.log(res, queue.value)
+}
+
+function clear () {
+    queue.value.clear()
 }
 </script>
